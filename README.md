@@ -16,6 +16,10 @@ node -e "require('http').createServer((req,res)=>{res.writeHead(200,{'Content-Ty
 
 Then open: `http://localhost:5173`
 
+## Hosting notes (GitHub Pages)
+
+This project uses `loader.js` to load and compile `app.jsx` in the browser. This avoids the common GitHub Pages issue where `.jsx` files are served with a non-JS MIME type and the app area stays blank.
+
 ## Backup / Restore
 
 - **Export** downloads a JSON file containing all goals + holdings + allocations.
