@@ -135,7 +135,8 @@
     <!-- Babel for in-browser JSX compilation (no build step) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <script type="text/babel" src="./app.jsx"></script>
+    <!-- Load app.jsx via fetch so hosts serving .jsx as text/plain still work -->
+    <script src="./loader.js"></script>
   </body>
 </html>
 
