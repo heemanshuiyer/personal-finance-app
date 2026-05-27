@@ -1128,7 +1128,7 @@ function GoalsScreen({
                 </tbody>
               </table>
               <div className="mt-3 text-xs text-slate-500">
-                If you set a higher % here, it will be limited so the total allocation on that holding stays <= 100%.
+                If you set a higher % here, it will be limited so the total allocation on that holding stays {"≤"} 100%.
               </div>
             </div>
           ) : null}
