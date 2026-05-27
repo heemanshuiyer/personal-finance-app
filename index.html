@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Goals Portfolio Planner</title>
+    <meta
+      name="description"
+      content="A clean, local-only goals and portfolio planner. No logins, no tracking — everything stays in your browser."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='12' cy='12' r='10' fill='%230f172a'/%3E%3Cpath d='M8 13.5 11 16l5-7' stroke='%23e5e7eb' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Prevent input number spinners from changing layout */
+      input[type="number"]::-webkit-outer-spin-button,
+      input[type="number"]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      input[type="number"] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-50">
+    <div class="relative isolate overflow-hidden">
+      <!-- Subtle gradient background -->
+      <div
+        aria-hidden="true"
+        class="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top,_rgba(148,163,184,0.30),transparent_55%),radial-gradient(circle_at_bottom,_rgba(15,23,42,0.95),#020617)]"
+      ></div>
+
+      <!-- Shell / hero copy -->
+      <header class="border-b border-white/10 bg-slate-950/40 backdrop-blur">
+        <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
+          <div class="flex items-center gap-3">
+            <div class="flex h-8 w-8 items-center justify-center rounded-2xl bg-slate-900 ring-1 ring-white/10">
+              <span class="text-xs font-semibold tracking-tight text-slate-100">₹</span>
+            </div>
+            <div>
+              <div class="text-sm font-semibold tracking-tight text-slate-50">
+                Goals Portfolio Planner
+              </div>
+              <div class="text-xs text-slate-400">
+                Local-only, privacy-first money planning
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="mx-auto flex max-w-6xl flex-col gap-8 px-4 pb-12 pt-10 lg:flex-row lg:items-start lg:pt-14">
+        <!-- Left marketing column -->
+        <section class="max-w-xl space-y-6">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+              PERSONAL FINANCE, ON YOUR TERMS
+            </p>
+            <h1 class="mt-3 text-3xl font-semibold tracking-tight text-slate-50 sm:text-4xl lg:text-5xl">
+              See every rupee, behind every goal.
+            </h1>
+            <p class="mt-4 text-sm leading-relaxed text-slate-300 sm:text-base">
+              Plan your life goals, not just your investments. Allocate bank balances, FDs, mutual funds and stocks
+              into clear goals like retirement, home, vacation and your emergency fund — all computed privately in your
+              own browser.
+            </p>
+          </div>
+
+          <div class="grid gap-4 text-sm text-slate-200 sm:grid-cols-3">
+            <div class="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+              <div class="text-xs font-medium uppercase tracking-wide text-slate-400">
+                Local only
+              </div>
+              <div class="mt-1 text-sm font-semibold text-slate-50">
+                No login. No cloud. Just your browser.
+              </div>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+              <div class="text-xs font-medium uppercase tracking-wide text-slate-400">
+                Goals first
+              </div>
+              <div class="mt-1 text-sm font-semibold text-slate-50">
+                Emergency fund is mandatory, everything else is flexible.
+              </div>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-white/5 px-3 py-3">
+              <div class="text-xs font-medium uppercase tracking-wide text-slate-400">
+                Simple exports
+              </div>
+              <div class="mt-1 text-sm font-semibold text-slate-50">
+                One JSON file to back up and restore.
+              </div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/20 text-[10px] font-semibold text-emerald-300">
+                ✓
+              </span>
+              <span>Fully client-side React app</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="inline-flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-[10px] font-semibold text-sky-300">
+                ✓
+              </span>
+              <span>Works offline after first load</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right app column -->
+        <section class="w-full lg:flex-1">
+          <div
+            class="relative rounded-3xl border border-white/10 bg-slate-900/80 p-3 shadow-[0_18px_60px_rgba(15,23,42,0.85)] backdrop-blur"
+          >
+            <div class="pointer-events-none absolute inset-x-6 top-3 flex justify-center">
+              <div class="h-1 w-24 rounded-full bg-slate-600/80"></div>
+            </div>
+            <div class="mt-5 rounded-2xl bg-slate-950/60 p-2 sm:p-3">
+              <div id="root"></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- React (UMD) -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for in-browser JSX compilation (no build step) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel" src="./app.jsx"></script>
+  </body>
+</html>
+
