@@ -803,13 +803,6 @@ function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
               <div className="mt-1 text-xs text-slate-500">Across {goals.length} goals</div>
             </div>
             <div className={`${cls.card} p-5`}>
-              <div className={cls.label}>Monthly gap</div>
-              <div className={`mt-2 text-xl font-semibold ${surplus >= required ? "text-emerald-400" : "text-rose-400"}`}>
-                {formatINR(Math.max(0, required - surplus))}
-              </div>
-              <div className="mt-1 text-xs text-slate-500">To fund all goals</div>
-            </div>
-            <div className={`${cls.card} p-5`}>
               <div className={cls.label}>Goal funding rate</div>
               <div className="mt-2 text-xl font-semibold text-white">
                 {formatINR(surplus)} / {formatINR(required)}
