@@ -36,6 +36,7 @@ const BANK_NAMES = [
   "Development Credit Bank",
   "Dhanlaxmi Bank",
   "Federal Bank",
+  "HDFC Bank",
   "ICICI Bank",
   "IDBI Bank",
   "Indian Bank",
@@ -764,10 +765,10 @@ function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
           Your financial clarity starts here
         </p>
         <h1 className="font-serif mt-4 max-w-3xl text-4xl font-semibold leading-tight text-white sm:text-5xl">
-          How funded is your future?
+          Your future, mapped.
         </h1>
         <p className={cls.subtext + " mt-4 max-w-2xl"}>
-          Set your life goals. Map your investments. See exactly where you stand, and what to do next.
+          Set your goals. Map your investments. See exactly where you stand, and what to do next.
         </p>
 
         <div className={`${cls.card} mt-10 max-w-xl p-6`}>
@@ -860,10 +861,9 @@ function AppHeader({
               A
             </div>
             <div>
-              <div className="text-sm font-semibold tracking-tight text-white">
+              <div className="text-lg font-semibold tracking-tight text-white">
                 Arth<span className="text-emerald-400">a</span>
               </div>
-              <div className="text-xs text-slate-500">Private | stored in your browser</div>
             </div>
           </button>
 
