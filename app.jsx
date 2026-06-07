@@ -787,9 +787,6 @@ function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
           <button className={cls.btnPrimary} onClick={onEnterApp}>
             Map my goals
           </button>
-          <button className={cls.btnSecondary} onClick={onEnterApp}>
-            See how it works
-          </button>
         </div>
         <p className="mt-6 text-xs text-slate-500">No account needed. Your data stays on your device.</p>
 
