@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Artha | Goals Portfolio Planner</title>
+    <meta
+      name="description"
+      content="A clean, local-only goals and portfolio planner. No logins, no tracking — everything stays in your browser."
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='12' cy='12' r='10' fill='%230f172a'/%3E%3Cpath d='M8 13.5 11 16l5-7' stroke='%23e5e7eb' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      * {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+        background: #050505;
+        color: #f8fafc;
+      }
+
+      .font-serif {
+        font-family: Georgia, "Times New Roman", "Iowan Old Style", "Palatino Linotype", serif;
+      }
+
+      input[type="number"]::-webkit-outer-spin-button,
+      input[type="number"]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
+      input[type="number"] {
+        -moz-appearance: textfield;
+        appearance: textfield;
+      }
+
+      input,
+      select,
+      textarea {
+        color: #f8fafc;
+      }
+
+      input::placeholder {
+        color: #64748b;
+      }
+
+      input[type="date"] {
+        color-scheme: dark;
+      }
+
+      select option {
+        background: #0f172a;
+        color: #f8fafc;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="./loader.js"></script>
+  </body>
+</html>
