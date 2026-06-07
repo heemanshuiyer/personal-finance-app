@@ -940,13 +940,20 @@ function DashboardScreen({ goals, summaries, metrics, includeDebt, setIncludeDeb
             <div className={cls.label}>Net worth</div>
             <label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-500">
               <span>Include debt</span>
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-white/20 bg-[#1a1a1a]"
-                checked={includeDebt}
-                onChange={(e) => setIncludeDebt(e.target.checked)}
-              />
-            </label>
+                <button
+                  type="button"
+                  onClick={() => setIncludeDebt(!includeDebt)}
+                  className={`relative h-5 w-9 rounded-full transition-colors duration-200 ${
+                    includeDebt ? "bg-emerald-500" : "bg-slate-700"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
+                      includeDebt ? "translate-x-4" : "translate-x-0.5"
+                    }`}
+                  />
+                </button>
+          </label>
           </div>
           <div className={`mt-2 text-2xl font-semibold ${metrics.netWorth < 0 ? "text-rose-400" : "text-white"}`}>
             {formatINR(metrics.netWorth)}
