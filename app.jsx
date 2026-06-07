@@ -949,7 +949,7 @@ function DashboardScreen({ goals, summaries, metrics, includeDebt, setIncludeDeb
                 >
                   <span
                     className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
-                      includeDebt ? "translate-x-4" : "translate-x-0.5"
+                      includeDebt ? "translate-x-4" : "translate-x-0"
                     }`}
                   />
                 </button>
@@ -960,7 +960,7 @@ function DashboardScreen({ goals, summaries, metrics, includeDebt, setIncludeDeb
           </div>
           <div className="mt-1 text-xs text-slate-500">
             {includeDebt
-              ? "Bank balances + investments - outstanding loan commitments"
+              ? "Bank balances + investments - debt"
               : "Bank balances + investments"}
           </div>
         </div>
