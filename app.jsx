@@ -949,7 +949,7 @@ function DashboardScreen({ goals, summaries, metrics, includeDebt, setIncludeDeb
                 >
                   <span
                     className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
-                      includeDebt ? "translate-x-4" : "translate-x-0"
+                      includeDebt ? "translate-x-0.5" : "translate-x-4"
                     }`}
                   />
                 </button>
