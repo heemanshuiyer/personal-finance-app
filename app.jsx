@@ -773,13 +773,12 @@ function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
 
         <div className={`${cls.card} mt-10 max-w-xl p-6`}>
           <div className="text-sm text-slate-500">Goal funding score</div>
-          <div className="mt-2 text-5xl font-semibold text-emerald-400">{fundingPct}%</div>
+          <div className="mt-2 text-5xl font-semibold text-emerald-400">71%</div>
           <div className="mt-4">
-            <ProgressBar pct={fundingPct} barClass="bg-emerald-400" />
+            <ProgressBar pct={71} barClass="bg-emerald-400" />
           </div>
           <p className="mt-4 text-sm text-slate-500">
-            {formatCompactINR(totalAllocatedCorpus)} allocated across {goals.length} goal
-            {goals.length === 1 ? "" : "s"}
+            {formatCompactINR(totalAllocatedCorpus)} allocated across {5} goals
           </p>
         </div>
 
@@ -795,17 +794,17 @@ function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <div className={`${cls.card} p-5`}>
               <div className={cls.label}>Net worth</div>
-              <div className="mt-2 text-xl font-semibold text-white">{formatINR(netWorth)}</div>
+              <div className="mt-2 text-xl font-semibold text-white">{formatINR(1870000)}</div>
             </div>
             <div className={`${cls.card} p-5`}>
-              <div className={cls.label}>Goal funding</div>
-              <div className="mt-2 text-xl font-semibold text-white">{fundingPct}%</div>
-              <div className="mt-1 text-xs text-slate-500">Across {goals.length} goals</div>
+              <div className={cls.label}>Goal funding ratio</div>
+              <div className="mt-2 text-xl font-semibold text-white">{71}%</div>
+              <div className="mt-1 text-xs text-slate-500">Across 5 goals</div>
             </div>
             <div className={`${cls.card} p-5`}>
               <div className={cls.label}>Goal funding rate</div>
               <div className="mt-2 text-xl font-semibold text-white">
-                {formatINR(surplus)} / {formatINR(required)}
+                {formatINR(82000)} / {formatINR(90000)}
               </div>
               <div className="mt-1 text-xs text-slate-500">Surplus vs required monthly</div>
             </div>
