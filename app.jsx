@@ -316,12 +316,67 @@ function computeGoalProjectedAllocation(goal, state) {
 function computeRequiredMonthlyInvestment(goal, state) {
   const target = safeNumber(goal.targetAmount);
   if (target <= 0) return 0;
+  const maturityCredit = computeMaturityCreditForGoal(goal.id, goal, state);
+  const effectiveTarget = Math.max(0, target - maturityCredit);
   const today = todayLocalISODate();
   const months = Math.max(0, diffMonths(today, goal.targetDate));
   const allocated = computeGoalExistingAllocation(goal.id, state);
-  const remaining = Math.max(0, target - allocated);
+  const remaining = Math.max(0, effectiveTarget - allocated);
   if (months <= 0) return remaining;
   return remaining / months;
+}
+
+function computeMaturityCreditForGoal(goalId, goal, state) {
+  let credit = 0;
+  const goalDate = parseISODate(goal.targetDate);
+  if (!goalDate) return 0;
+  for (const inv of state.investments || []) {
+    if (!inv.isRecurring || inv.recurringAllocationMode !== "maturity") continue;
+    const matDate = parseISODate(inv.maturityDate);
+    const matAmt = safeNumber(inv.maturityAmount);
+    if (!matDate || matAmt <= 0) continue;
+    if (monthIndex(goalDate) <= monthIndex(matDate)) continue;
+    const pct = clamp(safeNumber(normalizeAllocations(inv.allocations || {})[goalId]), 0, 100);
+    if (pct > 0) credit += (matAmt * pct) / 100;
+  }
+  return credit;
+}
+
+function computeGoalMonthlyRecurringAllocation(goalId, state) {
+  let sum = 0;
+  for (const inv of state.investments || []) {
+    if (!inv.isRecurring || inv.recurringAllocationMode === "maturity") continue;
+    const pct = clamp(safeNumber(normalizeAllocations(inv.allocations || {})[goalId]), 0, 100);
+    if (pct <= 0) continue;
+    const contrib = safeNumber(inv.monthlyContribution);
+    if ((inv.frequency || "monthly") === "yearly") sum += ((contrib * pct) / 100) / 12;
+    else sum += (contrib * pct) / 100;
+  }
+  return sum;
+}
+
+function getGoalAttentionReason(goal, state, summary) {
+  const status = summary?.status || getGoalStatusFromProjection(goal, state);
+  if (status.tone !== "warn") return null;
+  const monthlyRequired = summary?.monthlyRequired ?? computeRequiredMonthlyInvestment(goal, state);
+  const monthlyAllocated = computeGoalMonthlyRecurringAllocation(goal.id, state);
+  if (monthlyRequired > monthlyAllocated + 1) return "Falling behind of schedule";
+  if (status.label === "Needs attention") return "Falling behind of schedule";
+  return null;
+}
+
+function isPortfolioEmpty(state) {
+  const hasExtraGoals = (state.goals || []).some((g) => !g.isEmergencyFund);
+  const hasMoney =
+    safeNumber(state.monthlyIncome) > 0 ||
+    safeNumber(state.monthlyExpenses) > 0 ||
+    (state.commitments || []).some((c) => safeNumber(c.outstandingAmount) > 0 || safeNumber(c.monthlyEmi) > 0) ||
+    (state.bankAccounts || []).some((b) => safeNumber(b.balance) > 0) ||
+    (state.investments || []).length > 0;
+  const hasAllocations =
+    (state.bankAccounts || []).some((b) => Object.keys(normalizeAllocations(b.allocations)).length > 0) ||
+    (state.investments || []).some((inv) => Object.keys(normalizeAllocations(inv.allocations)).length > 0);
+  return !hasExtraGoals && !hasMoney && !hasAllocations;
 }
 
 function computeTotalRequiredMonthlyInvestment(goals, state) {
@@ -408,8 +463,8 @@ function getGoalAllocatedSources(goalId, state) {
         allocationPct: pct,
         allocatedAmount: (monthly * pct) / 100,
         basisAmount: monthly,
-        basisLabel: "Monthly contribution",
-        note: `${inv.frequency || "monthly"} SIP`,
+        basisLabel: "Recurring contribution",
+        note: `${inv.frequency || "monthly"} recurring${inv.maturityDate ? `, ends ${inv.maturityDate}` : ""}`,
       });
       if (safeNumber(inv.outstandingAmount) > 0) {
         sources.push({
@@ -480,6 +535,21 @@ function formatQuarterLabel(isoDate) {
   if (!d) return isoDate;
   const q = Math.floor(d.getMonth() / 3) + 1;
   return `Q${q} ${d.getFullYear()}`;
+}
+
+function formatChartXLabel(isoDate, spanYears) {
+  const d = parseISODate(isoDate);
+  if (!d) return isoDate;
+  if (spanYears > 6) return String(d.getFullYear());
+  if (spanYears > 3) return `Q${Math.floor(d.getMonth() / 3) + 1} '${String(d.getFullYear()).slice(-2)}`;
+  return formatQuarterLabel(isoDate);
+}
+
+function getChartLabelStride(pointCount, spanYears) {
+  if (pointCount <= 8) return 1;
+  if (spanYears > 8) return Math.max(1, Math.ceil(pointCount / 6));
+  if (spanYears > 4) return Math.max(1, Math.ceil(pointCount / 8));
+  return Math.max(1, Math.ceil(pointCount / 10));
 }
 
 function buildQuarterlyTimeline(startISO, endISO) {
@@ -880,14 +950,51 @@ function ProgressBar({ pct, barClass }) {
   );
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status, reason }) {
   const toneClass = {
     ahead: "rounded-full bg-sky-500/15 px-3 py-1 text-xs font-medium text-sky-300",
     good: "rounded-full bg-emerald-500/15 px-3 py-1 text-xs font-medium text-emerald-300",
     slight: "rounded-full bg-amber-500/15 px-3 py-1 text-xs font-medium text-amber-300",
     warn: "rounded-full bg-rose-500/15 px-3 py-1 text-xs font-medium text-rose-300",
   };
-  return <span className={toneClass[status.tone] || toneClass.good}>{status.label}</span>;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <span className={toneClass[status.tone] || toneClass.good}>{status.label}</span>
+      {reason ? <span className="text-[10px] text-rose-300/90">{reason}</span> : null}
+    </div>
+  );
+}
+
+function GoalAllocationsPanel({ goalId, state }) {
+  const sources = getGoalAllocatedSources(goalId, state);
+  return (
+    <div>
+      <div className={cls.label}>Allocations</div>
+      {sources.length === 0 ? (
+        <p className="mt-3 text-sm text-slate-500">No holdings allocated to this goal yet.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {sources.map((src) => (
+            <div key={src.id} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-white">{src.name}</div>
+                  <div className="text-xs text-slate-500">
+                    {src.typeLabel} | {src.basisLabel}: {formatINR(src.basisAmount)}
+                    {src.note ? ` | ${src.note}` : ""}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold text-white">{formatINR(src.allocatedAmount)}</div>
+                  <div className="text-xs text-slate-500">{Math.round(src.allocationPct)}%</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function GoalDetailContent({ goal, summary, index, state }) {
@@ -895,6 +1002,7 @@ function GoalDetailContent({ goal, summary, index, state }) {
   const allocated = summary?.allocatedAmount ?? computeGoalExistingAllocation(goal.id, state);
   const pct = goal.targetAmount > 0 ? clamp((allocated / goal.targetAmount) * 100, 0, 100) : 0;
   const status = getGoalStatus(summary);
+  const attentionReason = summary?.attentionReason ?? getGoalAttentionReason(goal, state, summary);
   const monthlyRequired = summary?.monthlyRequired ?? 0;
   const sources = getGoalAllocatedSources(goal.id, state);
 
@@ -904,7 +1012,7 @@ function GoalDetailContent({ goal, summary, index, state }) {
         <div className={`flex h-11 w-11 items-center justify-center rounded-xl text-sm font-semibold text-white ${theme.iconBg}`}>
           {theme.icon}
         </div>
-        <StatusBadge status={status} />
+        <StatusBadge status={status} reason={attentionReason} />
       </div>
 
       <h3 className="mt-5 text-lg font-semibold text-white">{goal.name}</h3>
@@ -982,24 +1090,21 @@ function GoalDetailContent({ goal, summary, index, state }) {
   );
 }
 
-function GoalProgressCard({ goal, summary, index, state, onClick }) {
+function GoalProgressCard({ goal, summary, index, state, onClick, demo }) {
   const theme = getGoalTheme(goal, index);
   const allocated = summary?.allocatedAmount ?? 0;
   const pct = goal.targetAmount > 0 ? clamp((allocated / goal.targetAmount) * 100, 0, 100) : 0;
   const status = getGoalStatus(summary);
   const monthlyRequired = summary?.monthlyRequired ?? 0;
+  const attentionReason = summary?.attentionReason ?? null;
 
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`${cls.card} w-full p-5 text-left transition hover:border-white/25 hover:bg-white/[0.02]`}
-    >
+  const cardBody = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <div className={`flex h-11 w-11 items-center justify-center rounded-xl text-sm font-semibold text-white ${theme.iconBg}`}>
           {theme.icon}
         </div>
-        <StatusBadge status={status} />
+        <StatusBadge status={status} reason={attentionReason} />
       </div>
 
       <h3 className="mt-5 text-lg font-semibold text-white">{goal.name}</h3>
@@ -1031,7 +1136,21 @@ function GoalProgressCard({ goal, summary, index, state, onClick }) {
         </div>
       ) : null}
 
-      <p className="mt-4 text-xs text-slate-500">Click for full details</p>
+      {!demo ? <p className="mt-4 text-xs text-slate-500">Click for full details</p> : null}
+    </>
+  );
+
+  if (demo || !onClick) {
+    return <div className={`${cls.card} p-5`}>{cardBody}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`${cls.card} w-full p-5 text-left transition hover:border-white/25 hover:bg-white/[0.02]`}
+    >
+      {cardBody}
     </button>
   );
 }
@@ -1070,7 +1189,7 @@ function TabNavFooter({ label, buttonText, onNext }) {
 function OutlookChart({ data }) {
   const width = 900;
   const height = 320;
-  const pad = { top: 24, right: 24, bottom: 48, left: 72 };
+  const pad = { top: 24, right: 24, bottom: 56, left: 72 };
   const innerW = width - pad.left - pad.right;
   const innerH = height - pad.top - pad.bottom;
 
@@ -1082,6 +1201,11 @@ function OutlookChart({ data }) {
   const yMax = Math.ceil(maxVal / 100000) * 100000 || 100000;
   const ticks = 5;
 
+  const firstYear = (parseISODate(data[0].iso) || new Date()).getFullYear();
+  const lastYear = (parseISODate(data[data.length - 1].iso) || new Date()).getFullYear();
+  const spanYears = Math.max(1, lastYear - firstYear + 1);
+  const labelStride = getChartLabelStride(data.length, spanYears);
+
   const xAt = (i) => pad.left + (data.length <= 1 ? innerW / 2 : (i / (data.length - 1)) * innerW);
   const yAt = (v) => pad.top + innerH - (v / yMax) * innerH;
 
@@ -1089,13 +1213,6 @@ function OutlookChart({ data }) {
     data
       .map((d, i) => `${i === 0 ? "M" : "L"} ${xAt(i).toFixed(1)} ${yAt(d[key]).toFixed(1)}`)
       .join(" ");
-
-  const shortfallPath = [];
-  data.forEach((d, i) => {
-    if (d.required <= d.available) return;
-    const x = xAt(i);
-    shortfallPath.push(`${shortfallPath.length ? "L" : "M"} ${x} ${yAt(d.required)} L ${x} ${yAt(d.available)}`);
-  });
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label="Financial outlook chart">
@@ -1116,9 +1233,9 @@ function OutlookChart({ data }) {
         d.required > d.available ? (
           <rect
             key={`gap_${i}`}
-            x={xAt(i) - 10}
+            x={xAt(i) - 12}
             y={yAt(d.required)}
-            width={20}
+            width={24}
             height={Math.max(0, yAt(d.available) - yAt(d.required))}
             fill="rgba(244,63,94,0.18)"
           />
@@ -1132,9 +1249,18 @@ function OutlookChart({ data }) {
         <g key={d.iso}>
           <circle cx={xAt(i)} cy={yAt(d.available)} r="4" fill="#38bdf8" />
           <circle cx={xAt(i)} cy={yAt(d.required)} r="4" fill="#fb7185" />
-          <text x={xAt(i)} y={height - 16} textAnchor="middle" fill="#94a3b8" fontSize="11">
-            {d.label}
-          </text>
+          {i % labelStride === 0 || i === data.length - 1 ? (
+            <text
+              x={xAt(i)}
+              y={height - 12}
+              textAnchor="middle"
+              fill="#94a3b8"
+              fontSize={spanYears > 6 ? 10 : 11}
+              transform={spanYears > 6 ? undefined : `rotate(-20 ${xAt(i)} ${height - 12})`}
+            >
+              {formatChartXLabel(d.iso, spanYears)}
+            </text>
+          ) : null}
         </g>
       ))}
     </svg>
@@ -1231,19 +1357,271 @@ function Modal({ open, title, children, onClose, footer }) {
   );
 }
 
-function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
-  const fundingPct = Math.round(metrics.goalFundingRatio);
-  const surplus = metrics.investableSurplus;
-  const required = metrics.totalRequiredMonthly;
-  const netWorth = metrics.netWorth;
+const LANDING_DEMO = {
+  netWorth: 2732000,
+  goalFundingRatio: 71,
+  goalFundingSurplus: 137000,
+  goalFundingRequired: 110000,
+  fundingScore: 71,
+  allocatedCorpus: 840000,
+  goalCount: 5,
+};
 
+const ONBOARDING_DEMO_GOALS = [
+  {
+    id: "demo_ef",
+    name: "Emergency Fund",
+    targetDate: "2027-06-01",
+    targetAmount: 690000,
+    icon: "EF",
+    iconBg: "bg-amber-500/15",
+    bar: "bg-amber-400",
+    allocated: 300000,
+    monthlyRequired: 35864,
+    status: { label: "Needs attention", tone: "warn" },
+    attentionReason: "Falling behind of schedule",
+  },
+  {
+    id: "demo_car",
+    name: "Car downpayment",
+    targetDate: "2029-01-01",
+    targetAmount: 1500000,
+    icon: "T",
+    iconBg: "bg-orange-500/15",
+    bar: "bg-orange-400",
+    allocated: 220000,
+    monthlyRequired: 42800,
+    status: { label: "Ahead of schedule", tone: "ahead" },
+    attentionReason: null,
+  },
+  {
+    id: "demo_trip",
+    name: "Europe Family Trip",
+    targetDate: "2027-11-01",
+    targetAmount: 450000,
+    icon: "T",
+    iconBg: "bg-orange-500/15",
+    bar: "bg-orange-400",
+    allocated: 110000,
+    monthlyRequired: 21375,
+    status: { label: "Ahead of schedule", tone: "ahead" },
+    attentionReason: null,
+  },
+  {
+    id: "demo_fire",
+    name: "Retire Early",
+    targetDate: "2036-06-01",
+    targetAmount: 20000000,
+    icon: "R",
+    iconBg: "bg-sky-500/15",
+    bar: "bg-sky-400",
+    allocated: 4380000,
+    monthlyRequired: 131294,
+    status: { label: "Needs attention", tone: "warn" },
+    attentionReason: "Falling behind of schedule",
+  },
+];
+
+function OnboardingNav({ step, onBack, onNext, nextLabel }) {
+  return (
+    <div className="mt-10 flex items-center justify-between">
+      {step > 0 ? (
+        <button type="button" className={cls.btnGhost} onClick={onBack} aria-label="Previous">
+          ← Back
+        </button>
+      ) : (
+        <div />
+      )}
+      <button type="button" className={cls.btnPrimary} onClick={onNext}>
+        {nextLabel || "Next →"}
+      </button>
+    </div>
+  );
+}
+
+function OnboardingScreen({ step, setStep, onFinish }) {
+  if (step === 0) {
+    return (
+      <div className="min-h-screen">
+        <header className={`${cls.page} py-6`}>
+          <div className="text-lg font-semibold tracking-tight text-white">
+            Arth<span className="text-emerald-400">a</span>
+          </div>
+        </header>
+        <main className={`${cls.page} pb-16`}>
+          <p className={cls.label}>Step 1 of 3</p>
+          <h1 className={cls.heading}>Set your goals</h1>
+          <p className={cls.subtext}>Define what you are saving for and when you need the money.</p>
+
+          <div className={`${cls.card} mt-8 p-6`}>
+            <p className={cls.label}>Edit</p>
+            <h2 className="mt-1 text-xl font-semibold text-white">FIRE</h2>
+            <p className={cls.subtext}>Set a target amount and date. Allocate your holdings to this goal in Financial Data.</p>
+
+            <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className={cls.label}>Goal name</label>
+                <div className={`${cls.input} bg-white/[0.03] text-slate-300`}>FIRE</div>
+              </div>
+              <div>
+                <label className={cls.label}>Target date</label>
+                <div className={`${cls.input} bg-white/[0.03] text-slate-300`}>01-06-2036</div>
+              </div>
+              <div>
+                <label className={cls.label}>Target amount (INR)</label>
+                <div className={`${cls.input} bg-white/[0.03] text-slate-300`}>30000000</div>
+              </div>
+            </div>
+          </div>
+
+          <OnboardingNav step={0} onBack={() => {}} onNext={() => setStep(1)} />
+        </main>
+      </div>
+    );
+  }
+
+  if (step === 1) {
+    return (
+      <div className="min-h-screen">
+        <header className={`${cls.page} py-6`}>
+          <div className="text-lg font-semibold tracking-tight text-white">
+            Arth<span className="text-emerald-400">a</span>
+          </div>
+        </header>
+        <main className={`${cls.page} pb-16`}>
+          <p className={cls.label}>Step 2 of 3</p>
+          <h1 className={cls.heading}>Map your investments</h1>
+          <p className={cls.subtext}>Link bank balances and investments to your goals.</p>
+
+          <section className={`${cls.card} mt-8 p-6`}>
+            <div className="flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">4</span>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Bank accounts</h2>
+                <p className="text-sm text-slate-500">Savings balances allocated to goals</p>
+              </div>
+            </div>
+            <div className="mt-5 overflow-x-auto">
+              <table className="min-w-[640px] w-full">
+                <thead>
+                  <tr>
+                    <th className={cls.th}>Bank</th>
+                    <th className={cls.th}>Balance</th>
+                    <th className={cls.th}>Goal allocation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className={cls.td}>Central Bank of India</td>
+                    <td className={cls.td}>{formatINR(281000)}</td>
+                    <td className={cls.td}>Emergency Fund 50%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className={`${cls.card} mt-6 p-6`}>
+            <div className="flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">5</span>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Investments</h2>
+                <p className="text-sm text-slate-500">MFs, stocks, FDs, RDs, policies - allocate to goals</p>
+              </div>
+            </div>
+            <div className="mt-5 overflow-x-auto">
+              <table className="min-w-[760px] w-full">
+                <thead>
+                  <tr>
+                    <th className={cls.th}>Name</th>
+                    <th className={cls.th}>Type</th>
+                    <th className={cls.th}>Bank</th>
+                    <th className={cls.th}>Outstanding</th>
+                    <th className={cls.th}>Recurring</th>
+                    <th className={cls.th}>Recurring amount</th>
+                    <th className={cls.th}>Goals</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className={cls.td}>HDFC Bank</td>
+                    <td className={cls.td}>FD</td>
+                    <td className={cls.td}>HDFC Bank</td>
+                    <td className={cls.td}>{formatINR(1200000)}</td>
+                    <td className={cls.td}>No</td>
+                    <td className={cls.td}>-</td>
+                    <td className={cls.td}>Emergency Fund 80%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <OnboardingNav step={1} onBack={() => setStep(0)} onNext={() => setStep(2)} />
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen">
+      <header className={`${cls.page} py-6`}>
+        <div className="text-lg font-semibold tracking-tight text-white">
+          Arth<span className="text-emerald-400">a</span>
+        </div>
+      </header>
+      <main className={`${cls.page} pb-16`}>
+        <p className={cls.label}>Step 3 of 3</p>
+        <h1 className={cls.heading}>See where you stand</h1>
+        <p className={cls.subtext}>Track progress across goals and spot what needs attention.</p>
+
+        <p className={`${cls.label} mt-10`}>Goal progress</p>
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {ONBOARDING_DEMO_GOALS.map((g) => {
+            const pct = g.targetAmount > 0 ? clamp((g.allocated / g.targetAmount) * 100, 0, 100) : 0;
+            return (
+              <div key={g.id} className={`${cls.card} p-5`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl text-sm font-semibold text-white ${g.iconBg}`}>
+                    {g.icon}
+                  </div>
+                  <StatusBadge status={g.status} reason={g.attentionReason} />
+                </div>
+                <h3 className="mt-5 text-lg font-semibold text-white">{g.name}</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Target | {formatTargetDate(g.targetDate)} | {formatCompactINR(g.targetAmount)}
+                </p>
+                <div className="mt-5">
+                  <ProgressBar pct={pct} barClass={g.bar} />
+                </div>
+                <div className="mt-3 flex items-center justify-between text-sm">
+                  <span className="text-slate-500">{formatCompactINR(g.allocated)} invested</span>
+                  <span className="font-semibold text-white">{Math.round(pct)}%</span>
+                </div>
+                <div className="mt-4">
+                  <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300">
+                    Need {formatINR(g.monthlyRequired)}/month
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <OnboardingNav step={2} onBack={() => setStep(1)} onNext={onFinish} nextLabel="Get started" />
+      </main>
+    </div>
+  );
+}
+
+function LandingScreen({ isEmpty, onEnterApp, onStartTour }) {
   return (
     <div className="min-h-screen">
       <header className={`${cls.page} flex items-center justify-between py-6`}>
         <div className="text-lg font-semibold tracking-tight text-white">
           Arth<span className="text-emerald-400">a</span>
         </div>
-        <button className={cls.btnSecondary} onClick={onEnterApp}>
+        <button className={cls.btnSecondary} onClick={isEmpty ? onStartTour : onEnterApp}>
           Get started free
         </button>
       </header>
@@ -1261,20 +1639,25 @@ function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
 
         <div className={`${cls.card} mt-10 p-6`}>
           <div className="text-sm text-slate-500">Goal funding score</div>
-          <div className="mt-2 text-5xl font-semibold text-emerald-400">{fundingPct}%</div>
+          <div className="mt-2 text-5xl font-semibold text-emerald-400">{LANDING_DEMO.fundingScore}%</div>
           <div className="mt-4">
-            <ProgressBar pct={fundingPct} barClass="bg-emerald-400" />
+            <ProgressBar pct={LANDING_DEMO.fundingScore} barClass="bg-emerald-400" />
           </div>
           <p className="mt-4 text-sm text-slate-500">
-            {formatCompactINR(totalAllocatedCorpus)} allocated across {goals.length} goal
-            {goals.length === 1 ? "" : "s"}
+            {formatCompactINR(LANDING_DEMO.allocatedCorpus)} allocated across {LANDING_DEMO.goalCount} goals
           </p>
         </div>
 
         <div className="mt-8 flex flex-wrap gap-3">
-          <button className={cls.btnPrimary} onClick={onEnterApp}>
-            Map my goals
-          </button>
+          {isEmpty ? (
+            <button className={cls.btnPrimary} onClick={onStartTour}>
+              See how it works
+            </button>
+          ) : (
+            <button className={cls.btnPrimary} onClick={onEnterApp}>
+              Map my goals
+            </button>
+          )}
         </div>
         <p className="mt-6 text-xs text-slate-500">No account needed. Your data stays on your device.</p>
 
@@ -1283,17 +1666,17 @@ function LandingScreen({ metrics, goals, totalAllocatedCorpus, onEnterApp }) {
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className={`${cls.card} p-5`}>
               <div className={cls.label}>Net worth</div>
-              <div className="mt-2 text-2xl font-semibold text-white">{formatINR(netWorth)}</div>
+              <div className="mt-2 text-2xl font-semibold text-white">{formatINR(LANDING_DEMO.netWorth)}</div>
             </div>
             <div className={`${cls.card} p-5`}>
               <div className={cls.label}>Goal funding ratio</div>
-              <div className="mt-2 text-2xl font-semibold text-white">{fundingPct}%</div>
-              <div className="mt-1 text-xs text-slate-500">Across {goals.length} goals</div>
+              <div className="mt-2 text-2xl font-semibold text-white">{LANDING_DEMO.goalFundingRatio}%</div>
+              <div className="mt-1 text-xs text-slate-500">Across {LANDING_DEMO.goalCount} goals</div>
             </div>
             <div className={`${cls.card} p-5`}>
               <div className={cls.label}>Goal funding rate</div>
-              <div className="mt-2 text-2xl font-semibold text-white">
-                {formatINR(surplus)} / {formatINR(required)}
+              <div className="mt-2 text-2xl font-semibold text-emerald-400">
+                {formatINR(LANDING_DEMO.goalFundingSurplus)} / {formatINR(LANDING_DEMO.goalFundingRequired)}
               </div>
               <div className="mt-1 text-xs text-slate-500">Surplus vs required monthly</div>
             </div>
@@ -1576,6 +1959,9 @@ function GoalsScreen({
                     <div className="mt-1 text-xs text-slate-400">
                       {formatCompactINR(goalSummaries?.[g.id]?.allocatedAmount ?? 0)} invested
                     </div>
+                    {goalSummaries?.[g.id]?.attentionReason ? (
+                      <div className="mt-1 text-xs text-rose-300">{goalSummaries[g.id].attentionReason}</div>
+                    ) : null}
                     {goalSummaries?.[g.id]?.monthlyRequired > 0 ? (
                       <div className="mt-1 text-xs font-medium text-amber-300">
                         Need {formatINR(goalSummaries[g.id].monthlyRequired)}/month
@@ -1664,12 +2050,7 @@ function GoalsScreen({
 
             {!isNew && selectedGoal ? (
               <div className="mt-8 border-t border-white/10 pt-8">
-                <GoalDetailContent
-                  goal={selectedGoal}
-                  summary={goalSummaries?.[selectedGoal.id]}
-                  index={goals.findIndex((g) => g.id === selectedGoal.id)}
-                  state={state}
-                />
+                <GoalAllocationsPanel goalId={selectedGoal.id} state={state} />
               </div>
             ) : null}
 
@@ -2016,6 +2397,7 @@ function FinancialDataScreen({
                   <th className={cls.th}>Bank</th>
                   <th className={cls.th}>Outstanding</th>
                   <th className={cls.th}>Recurring</th>
+                  <th className={cls.th}>Recurring amount</th>
                   <th className={cls.th}>Goals</th>
                   <th className={cls.th}></th>
                 </tr>
@@ -2044,8 +2426,11 @@ function FinancialDataScreen({
                         {inv.type === InvestmentType.FD || inv.type === InvestmentType.RD ? inv.bankName || "-" : "-"}
                       </td>
                       <td className={cls.td}>{formatINR(inv.outstandingAmount)}</td>
+                      <td className={cls.td}>{inv.isRecurring ? "Yes" : "No"}</td>
                       <td className={cls.td}>
-                        {inv.isRecurring ? `${inv.frequency || "monthly"}${inv.maturityDate ? `  |  mat. ${inv.maturityDate}` : ""}` : "-"}
+                        {inv.isRecurring && inv.recurringAllocationMode !== "maturity"
+                          ? formatINR(inv.monthlyContribution)
+                          : "-"}
                       </td>
                       <td className={`${cls.td} max-w-xs truncate text-slate-500`}>{allocText}</td>
                       <td className={cls.td}>
@@ -2173,7 +2558,8 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
   const [allocations, setAllocations] = useState({});
 
   const isBankType = type === InvestmentType.FD || type === InvestmentType.RD;
-  const zeroAmountType = type === InvestmentType.POLICY || type === InvestmentType.RD;
+  const isRecurringMode = isRecurring && recurringAllocationMode !== "maturity";
+  const isMaturityMode = isRecurring && recurringAllocationMode === "maturity";
 
   useEffect(() => {
     if (!open) return;
@@ -2206,12 +2592,6 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (type === InvestmentType.POLICY || type === InvestmentType.RD) {
-      if (!outstandingAmount || outstandingAmount === "0") setOutstandingAmount("0");
-    }
-  }, [type]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const allocationBaseAmount = useMemo(() => {
     if (isRecurring) {
       if (recurringAllocationMode === "maturity") return safeNumber(maturityAmount);
@@ -2230,13 +2610,13 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
       type,
       name: isBankType ? String(bankName || "").trim() : String(name || "").trim(),
       bankName: isBankType ? String(bankName || "").trim() : "",
-      outstandingAmount: zeroAmountType ? safeNumber(outstandingAmount) : safeNumber(outstandingAmount),
+      outstandingAmount: safeNumber(outstandingAmount),
       isRecurring,
       recurringAllocationMode: isRecurring ? recurringAllocationMode : "monthly",
-      monthlyContribution: isRecurring ? safeNumber(monthlyContribution) : 0,
-      frequency: isRecurring ? frequency : "",
-      maturityAmount: safeNumber(maturityAmount),
-      maturityDate,
+      monthlyContribution: isRecurring && isRecurringMode ? safeNumber(monthlyContribution) : 0,
+      frequency: isRecurring && isRecurringMode ? frequency : "",
+      maturityAmount: isMaturityMode ? safeNumber(maturityAmount) : 0,
+      maturityDate: isRecurring ? maturityDate : "",
       allocations: normalizeAllocations(allocations),
     };
   }
@@ -2260,18 +2640,16 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
               onClick={() => {
                 if (isBankType && !String(bankName || "").trim()) return alert("Please select a bank.");
                 if (!isBankType && !String(name || "").trim()) return alert("Please enter a name or folio.");
-                if (isRecurring && !frequency) return alert("Please select a frequency.");
-                if (isRecurring && recurringAllocationMode === "monthly" && safeNumber(monthlyContribution) <= 0) {
-                  return alert("Please enter the monthly contribution amount.");
+                if (isRecurringMode && !frequency) return alert("Please select a frequency.");
+                if (isRecurringMode && safeNumber(monthlyContribution) <= 0) {
+                  return alert("Please enter the recurring contribution amount.");
                 }
-                if (isRecurring && recurringAllocationMode === "maturity") {
+                if (isMaturityMode) {
                   if (safeNumber(maturityAmount) <= 0) return alert("Please enter the maturity amount.");
                   if (!parseISODate(maturityDate)) return alert("Please enter the maturity date.");
                 }
-                const amt = zeroAmountType ? safeNumber(outstandingAmount) : safeNumber(outstandingAmount);
-                if (!zeroAmountType && !isRecurring && amt <= 0) {
-                  return alert("Outstanding amount must be greater than 0.");
-                }
+                const amt = safeNumber(outstandingAmount);
+                if (!isRecurring && amt <= 0) return alert("Outstanding amount must be greater than 0.");
                 const draft = buildDraft();
                 const maturityError = validateMaturityGoalAllocations(draft, goalList || []);
                 if (maturityError) return alert(maturityError);
@@ -2327,10 +2705,8 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
             className={cls.input}
             value={outstandingAmount}
             onChange={(e) => setOutstandingAmount(e.target.value)}
-            placeholder={zeroAmountType ? "0 for policy / RD" : "500000"}
-            disabled={zeroAmountType || (isRecurring && recurringAllocationMode === "monthly")}
+            placeholder="500000"
           />
-          {zeroAmountType ? <p className="mt-1 text-xs text-slate-500">Set to 0 for Policy and RD types.</p> : null}
         </div>
         <div className="sm:col-span-2">
           <label className="flex cursor-pointer items-center gap-3 text-sm text-slate-300">
@@ -2350,59 +2726,65 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  className={recurringAllocationMode === "monthly" ? cls.navTab(true) : cls.navTab(false)}
+                  className={isRecurringMode ? cls.navTab(true) : cls.navTab(false)}
                   onClick={() => setRecurringAllocationMode("monthly")}
                 >
-                  Monthly contribution
+                  Recurring contribution
                 </button>
                 <button
                   type="button"
-                  className={recurringAllocationMode === "maturity" ? cls.navTab(true) : cls.navTab(false)}
+                  className={isMaturityMode ? cls.navTab(true) : cls.navTab(false)}
                   onClick={() => setRecurringAllocationMode("maturity")}
                 >
                   Maturity amount
                 </button>
               </div>
             </div>
-            {recurringAllocationMode === "monthly" ? (
-              <div className="sm:col-span-2">
-                <label className={cls.label}>Monthly contribution (INR)</label>
-                <input
-                  type="number"
-                  min="0"
-                  className={cls.input}
-                  value={monthlyContribution}
-                  onChange={(e) => setMonthlyContribution(e.target.value)}
-                  placeholder="5000"
-                />
-              </div>
+            {isRecurringMode ? (
+              <>
+                <div className="sm:col-span-2">
+                  <label className={cls.label}>Recurring contribution (INR)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className={cls.input}
+                    value={monthlyContribution}
+                    onChange={(e) => setMonthlyContribution(e.target.value)}
+                    placeholder="5000"
+                  />
+                </div>
+                <div>
+                  <label className={cls.label}>Frequency</label>
+                  <select className={cls.select} value={frequency} onChange={(e) => setFrequency(e.target.value)}>
+                    <option value="monthly">Monthly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={cls.label}>End date of investment</label>
+                  <input type="date" className={cls.input} value={maturityDate} onChange={(e) => setMaturityDate(e.target.value)} />
+                </div>
+              </>
             ) : null}
-            <div>
-              <label className={cls.label}>Frequency</label>
-              <select className={cls.select} value={frequency} onChange={(e) => setFrequency(e.target.value)}>
-                <option value="monthly">Monthly</option>
-                <option value="yearly">Yearly</option>
-              </select>
-            </div>
-            <div>
-              <label className={cls.label}>
-                Maturity amount {recurringAllocationMode === "maturity" ? "(required)" : "(optional)"}
-              </label>
-              <input
-                type="number"
-                min="0"
-                className={cls.input}
-                value={maturityAmount}
-                onChange={(e) => setMaturityAmount(e.target.value)}
-                placeholder="1000000"
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={cls.label}>
-                Maturity date {recurringAllocationMode === "maturity" ? "(required)" : "(optional)"}
-              </label>
-              <input type="date" className={cls.input} value={maturityDate} onChange={(e) => setMaturityDate(e.target.value)} />
-            </div>
+            {isMaturityMode ? (
+              <>
+                <div>
+                  <label className={cls.label}>Maturity amount (INR)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className={cls.input}
+                    value={maturityAmount}
+                    onChange={(e) => setMaturityAmount(e.target.value)}
+                    placeholder="1000000"
+                  />
+                </div>
+                <div>
+                  <label className={cls.label}>Maturity date</label>
+                  <input type="date" className={cls.input} value={maturityDate} onChange={(e) => setMaturityDate(e.target.value)} />
+                </div>
+              </>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -2431,7 +2813,7 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
           isRecurring
             ? recurringAllocationMode === "maturity"
               ? "% of maturity amount"
-              : "% of monthly contribution"
+              : "% of recurring contribution"
             : "% of outstanding amount"
         }
       />
@@ -2442,6 +2824,7 @@ function InvestmentModal({ open, mode, investment, goalList, onClose, onSave }) 
 function App() {
   const [state, setState] = useState(buildDefaultState());
   const [view, setView] = useState("landing");
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const [activeTab, setActiveTab] = useState("goals");
   const [includeDebt, setIncludeDebt] = useState(false);
   const [selectedGoalId, setSelectedGoalId] = useState(null);
@@ -2562,6 +2945,8 @@ function App() {
         }
       }
 
+      const attentionReason = getGoalAttentionReason(g, state, { status, monthlyRequired });
+
       const allocatedPctOfTotal = totalAllocatedCorpus > 0 ? (allocated / totalAllocatedCorpus) * 100 : 0;
 
       byGoal[g.id] = {
@@ -2570,6 +2955,7 @@ function App() {
         monthlyRequired,
         projectedAmount: computeGoalProjectedAllocation(g, state),
         status,
+        attentionReason,
         warnings,
       };
     }
@@ -2635,8 +3021,9 @@ function App() {
   function resetAll() {
     const next = buildDefaultState();
     setState(next);
-    setView("app");
-    setActiveTab("dashboard");
+    setView("landing");
+    setOnboardingStep(0);
+    setActiveTab("goals");
     setGoalEditorId("new");
     setBankEditor(null);
     setInvestmentEditor(null);
@@ -2747,10 +3134,19 @@ function App() {
             ? "maturity"
             : "monthly"
           : "monthly",
-        monthlyContribution: draft.isRecurring ? safeNumber(draft.monthlyContribution) : 0,
-        frequency: draft.isRecurring ? String(draft.frequency || "monthly") : "",
-        maturityAmount: safeNumber(draft.maturityAmount),
-        maturityDate: String(draft.maturityDate || ""),
+        monthlyContribution:
+          draft.isRecurring && draft.recurringAllocationMode !== "maturity"
+            ? safeNumber(draft.monthlyContribution)
+            : 0,
+        frequency:
+          draft.isRecurring && draft.recurringAllocationMode !== "maturity"
+            ? String(draft.frequency || "monthly")
+            : "",
+        maturityAmount:
+          draft.isRecurring && draft.recurringAllocationMode === "maturity"
+            ? safeNumber(draft.maturityAmount)
+            : 0,
+        maturityDate: draft.isRecurring ? String(draft.maturityDate || "") : "",
         allocations,
       };
       if (draft.mode === "add") {
@@ -2770,6 +3166,7 @@ function App() {
   }
 
   const orderedGoals = useMemo(() => sortGoals(goals), [goals]);
+  const portfolioEmpty = useMemo(() => isPortfolioEmpty(state), [state]);
 
   return (
     <div className="min-h-screen">
@@ -2777,12 +3174,24 @@ function App() {
 
       {view === "landing" ? (
         <LandingScreen
-          metrics={dashboardMetrics}
-          goals={orderedGoals}
-          totalAllocatedCorpus={totalAllocatedCorpus}
+          isEmpty={portfolioEmpty}
           onEnterApp={() => {
             setView("app");
             setActiveTab("goals");
+          }}
+          onStartTour={() => {
+            setView("onboarding");
+            setOnboardingStep(0);
+          }}
+        />
+      ) : view === "onboarding" ? (
+        <OnboardingScreen
+          step={onboardingStep}
+          setStep={setOnboardingStep}
+          onFinish={() => {
+            setView("app");
+            setActiveTab("goals");
+            setOnboardingStep(0);
           }}
         />
       ) : (
